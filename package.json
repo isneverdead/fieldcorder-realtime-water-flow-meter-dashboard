@@ -1,0 +1,34 @@
+{
+  "name": "water-flow-meter-dashboard",
+  "version": "1.0.0",
+  "description": "Real-time Water Flow Meter, PPKR KSCS, Fieldcorder",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/isneverdead/fieldcorder-realtime-water-flow-meter-dashboard.git"
+  },
+  "keywords": [
+    "fieldcorder",
+    "KSCS",
+    "Fariz",
+    "Akbar",
+    "Fariz",
+    "Akbar",
+    "Shalahhuddin",
+    "WFM",
+    "Water",
+    "Flow",
+    "Meter",
+    "PP-KR",
+    "KSCS"
+  ],
+  "author": "Fariz Akbar Shalahhuddin",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/isneverdead/fieldcorder-realtime-water-flow-meter-dashboard/issues"
+  },
+  "homepage": "https://github.com/isneverdead/fieldcorder-realtime-water-flow-meter-dashboard#readme"
+}
