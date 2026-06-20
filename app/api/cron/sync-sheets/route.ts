@@ -1,47 +1,108 @@
-// app/api/cron/sync-sheets/route.ts
+// app/api/cron/daily-sheet/route.ts
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabaseAdmin } from '@/lib/supabase';
 
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+// Definisikan interface sesuai dengan skema tabel water_flow_logs di Supabase Anda
+interface WaterFlowLog {
+    id: number;
+    device_id: string;
+    flow_rate: number;
+    total_liters: number;
+    wifi_rssi: number;
+    created_at: string;
+}
+
+// Interface untuk payload yang dikirim ke Google Apps Script
+interface GoogleSheetPayload {
+    tanggal: string;
+    device_id: string;
+    avg_flow_rate: number;
+    total_liters: number;
+    wifi_rssi: number;
+}
 
 export async function GET(request: Request) {
+    // Proteksi API sederhana menggunakan token di query parameter
+    const { searchParams } = new URL(request.url);
+    const cronToken = searchParams.get('token');
+
+    if (cronToken !== process.env.CRON_SECRET_TOKEN) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     try {
-        // Validasi otentikasi header bearer token Cron Vercel
-        const authHeader = request.headers.get('authorization');
-        if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-            return new Response('Unauthorized', { status: 401 });
-        }
+        const supabaseAdmin = getSupabaseAdmin();
 
-        // Kalkulasi timestamp 24 jam ke belakang
-        const batasWaktu24Jam = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        // 1. Ambil jangkauan waktu hari ini (00:00:00.000 sampai 23:59:59.999)
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
 
-        // 1. Tarik log kolektif dari database Supabase
-        const { data: logs, error } = await supabase
+        const endOfDay = new Date();
+        endOfDay.setHours(23, 59, 59, 999);
+
+        // 2. Tarik data log hari ini dari Supabase dengan tipe data <WaterFlowLog[]>
+        const { data: logs, error } = await supabaseAdmin
             .from('water_flow_logs')
             .select('*')
-            .gte('created_at', batasWaktu24Jam);
+            .gte('created_at', startOfDay.toISOString())
+            .lte('created_at', endOfDay.toISOString())
+            .order('created_at', { ascending: false }) as { data: WaterFlowLog[] | null; error: any };
 
         if (error) throw error;
 
+        // Antisipasi jika tidak ada aktivitas sensor sama sekali sepanjang hari ini
         if (!logs || logs.length === 0) {
-            return NextResponse.json({ message: "Tidak ada data baru dalam 24 jam terakhir." });
+            return NextResponse.json({ message: "No data logs found for today" }, { status: 200 });
         }
 
-        // 2. Kirim paket array data secara serentak (Batch POST) ke Google Sheets
-        const response = await fetch(process.env.GOOGLE_APPS_SCRIPT_URL!, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(logs),
+        // 3. Ekstrak data & Kalkulasi Rangkuman Harian
+        const latestLog = logs[0]; // Log terakhir menyimpan akumulasi volume (total_liters) tertinggi hari ini
+        const deviceId = latestLog.device_id;
+        const totalLitersToday = latestLog.total_liters;
+        const wifiRssi = latestLog.wifi_rssi;
+
+        // Hitung nilai rata-rata flow rate hari ini
+        const totalFlowRate = logs.reduce((sum, item) => sum + (item.flow_rate || 0), 0);
+        const avgFlowRate = totalFlowRate / logs.length;
+
+        // Format tanggal lokal Indonesia untuk kolom pertama di Spreadsheet
+        const tanggalIndo = new Date().toLocaleDateString('id-ID', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
         });
 
-        const hasilGoogle = await response.json();
-        return NextResponse.json({ message: "Sinkronisasi harian ke Google Sheets berhasil!", detail: hasilGoogle });
+        // Buat objek payload yang valid sesuai dengan interface GoogleSheetPayload
+        const sheetPayload: GoogleSheetPayload = {
+            tanggal: tanggalIndo,
+            device_id: deviceId,
+            avg_flow_rate: Number(avgFlowRate.toFixed(2)),
+            total_liters: Number(totalLitersToday.toFixed(2)),
+            wifi_rssi: wifiRssi
+        };
+
+        // 4. Lemparkan ke Google Spreadsheet Webhook URL
+        const googleSheetsUrl = process.env.GOOGLE_SHEETS_WEBHOOK_URL;
+        if (!googleSheetsUrl) {
+            throw new Error("GOOGLE_SHEETS_WEBHOOK_URL belum didefinisikan di environment!");
+        }
+
+        const response = await fetch(googleSheetsUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(sheetPayload)
+        });
+
+        if (!response.ok) {
+            throw new Error(`Google Apps Script merespon dengan status: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        return NextResponse.json({ status: "SUCCESS", result }, { status: 200 });
 
     } catch (error: any) {
-        console.error("[CRON ERROR]:", error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        console.error("[CRON TYPE SCRIPT ERROR]:", error);
+        return NextResponse.json({ status: "ERROR", message: error.message || "Internal Server Error" }, { status: 500 });
     }
 }
