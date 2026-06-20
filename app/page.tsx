@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Droplet, Activity, Wifi } from 'lucide-react';
+import { Droplet, Activity, Wifi, ShieldAlert } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
@@ -11,7 +11,7 @@ const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 interface TelemetryData {
   device_id: string;
   flow_rate: number;
-  total_liters: number; // Dipastikan sesuai dengan skema database & API Route
+  total_liters: number;
   wifi_rssi: number;
   created_at: string;
 }
@@ -28,13 +28,12 @@ export default function Dashboard() {
   const [chartData, setChartData] = useState<{ x: string; y: number }[]>([]);
 
   useEffect(() => {
-    // 1. AMBIL DATA AWAL (INITIAL LOAD) TERBARU SAAT DASHBOARD DIBUKA
     const fetchLatestData = async () => {
       const { data, error } = await supabase
         .from('water_flow_logs')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(15); // Ambil 15 data terakhir untuk mengisi chart awal
+        .limit(15);
 
       if (error) {
         console.error('Gagal mengambil data awal:', error);
@@ -42,10 +41,8 @@ export default function Dashboard() {
       }
 
       if (data && data.length > 0) {
-        // Set KPI Card ke data paling baru (indeks 0)
         setCurrentData(data[0]);
 
-        // Balik urutan data untuk kebutuhan timeline grafik (dari lampau ke terbaru)
         const formattedChartData = data
           .reverse()
           .map((item: TelemetryData) => ({
@@ -62,7 +59,6 @@ export default function Dashboard() {
 
     fetchLatestData();
 
-    // 2. BERLANGGANAN DATA REAL-TIME VIA SUPABASE
     const channel = supabase
       .channel('schema-db-changes')
       .on(
@@ -86,7 +82,7 @@ export default function Dashboard() {
               ...prevData,
               { x: timeString, y: newData.flow_rate },
             ];
-            if (updated.length > 20) updated.shift(); // Geser grafik jika lebih dari 20 titik
+            if (updated.length > 20) updated.shift();
             return updated;
           });
         },
@@ -101,129 +97,193 @@ export default function Dashboard() {
   const chartOptions: ApexCharts.ApexOptions = {
     chart: {
       id: 'realtime-flowrate',
+      fontFamily: 'Inter, system-ui, sans-serif',
       animations: {
         enabled: true,
 
         dynamicAnimation: { speed: 1000 },
       },
       toolbar: { show: false },
+      sparkline: { enabled: false },
     },
-    stroke: { curve: 'smooth', width: 3 },
-    colors: ['#2563eb'],
+    stroke: { curve: 'smooth', width: 3.5 },
+    colors: ['#0B3C5D'], // Navy Blue dari Guideline Proyek
     xaxis: {
       type: 'category',
       labels: {
-        style: { colors: '#64748b' },
-        rotate: -45,
-        rotateAlways: false,
+        style: { colors: '#4F5D73', fontSize: '11px', fontWeight: 500 },
       },
+      axisBorder: { show: true, color: '#CBD5E1' },
+      axisTicks: { show: true, color: '#CBD5E1' },
     },
     yaxis: {
       min: 0,
       labels: {
-        formatter: (val) => val.toFixed(2),
-        style: { colors: '#64748b' },
+        formatter: (val) => `${val.toFixed(1)} L/m`,
+        style: { colors: '#4F5D73', fontSize: '11px', fontWeight: 500 },
       },
     },
-    grid: { borderColor: '#f1f5f9' },
+    grid: {
+      borderColor: '#F1F5F9',
+      strokeDashArray: 4,
+      xaxis: { lines: { show: true } },
+    },
+    markers: {
+      size: 0,
+      colors: ['#0B3C5D'],
+      strokeColors: '#fff',
+      strokeWidth: 2,
+      hover: { size: 5 },
+    },
     dataLabels: { enabled: false },
+    tooltip: {
+      theme: 'light',
+      x: { show: true },
+      marker: { show: true },
+    },
   };
 
   return (
-    <div className='min-h-screen bg-slate-50 p-6 md:p-12 text-slate-900'>
-      <div className='mx-auto max-w-6xl space-y-8'>
-        {/* Bagian Header Dashboard */}
-        <div className='flex flex-col md:flex-row md:items-center md:justify-between border-b border-slate-200 pb-5'>
-          <div>
-            <h1 className='text-3xl font-bold tracking-tight text-slate-950'>
-              Smart Water Flowmeter
-            </h1>
-            <p className='text-slate-500 mt-1'>
-              Sumber Data Utama: Supabase Realtime Database Replication.
-            </p>
-          </div>
-          <div className='mt-4 md:mt-0 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2'>
-            <span className='text-sm text-blue-700 font-medium'>
-              Device ID: {currentData.device_id}
+    <div className='min-h-screen bg-[#F8FAFC] p-4 md:p-8 text-[#4F5D73] font-sans antialiased selection:bg-[#0B3C5D]/10'>
+      <div className='mx-auto max-w-6xl space-y-6'>
+        {/* Top Branding Bar */}
+        <div className='flex items-center justify-between bg-white px-6 py-3 rounded-lg border border-slate-200/80 shadow-sm'>
+          <div className='flex items-center space-x-3'>
+            <div className='h-3 w-3 rounded-full bg-[#0B3C5D]' />
+            <span className='text-xs font-bold uppercase tracking-wider text-[#0B3C5D]'>
+              KSCS PACKAGE 2 — PP-KR JOINT VENTURE
             </span>
+          </div>
+          <div className='flex items-center space-x-2 text-xs font-semibold text-[#4F5D73]'>
+            <span className='relative flex h-2 w-2'>
+              <span className='animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75'></span>
+              <span className='relative inline-flex rounded-full h-2 w-2 bg-emerald-500'></span>
+            </span>
+            <span className='hidden sm:inline'>REALTIME TELEMETRY SYSTEM</span>
           </div>
         </div>
 
-        {/* Bagian KPI Grid */}
-        <div className='grid gap-6 md:grid-cols-3'>
+        {/* Header Title Section */}
+        <div className='bg-gradient-to-r from-[#0B3C5D] to-[#1E4E70] rounded-xl p-6 md:p-8 text-white shadow-md relative overflow-hidden'>
+          <div className='absolute right-0 top-0 translate-x-10 -translate-y-10 w-40 h-40 bg-white/5 rounded-full blur-2xl pointer-events-none' />
+          <div className='flex flex-col md:flex-row md:items-center md:justify-between gap-4 relative z-10'>
+            <div>
+              <div className='inline-flex items-center space-x-2 bg-[#F2C94C] text-[#0B3C5D] text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded mb-3 shadow-sm'>
+                <ShieldAlert className='h-3 w-3' />
+                <span>SAFETY FIRST — TELEMETRY CONTROL</span>
+              </div>
+              <h1 className='text-2xl md:text-3xl font-extrabold tracking-tight text-white'>
+                Smart Water Flowmeter
+              </h1>
+              <p className='text-slate-200/90 text-sm mt-1 max-w-xl font-medium'>
+                Karian Dam - Serpong Water Conveyance System Package II. Monitor
+                status debit pipa secara berkala dan dinamis.
+              </p>
+            </div>
+            <div className='bg-black/20 backdrop-blur-md border border-white/10 rounded-lg p-4 min-w-[200px]'>
+              <span className='text-[10px] text-slate-300 font-bold block uppercase tracking-wider'>
+                IDENTIFIKASI PERANGKAT
+              </span>
+              <span className='text-base font-bold text-[#F2C94C] block mt-0.5 tracking-wide'>
+                {currentData.device_id}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* KPI Grid Panel */}
+        <div className='grid gap-5 sm:grid-cols-2 md:grid-cols-3'>
           {/* Card 1: Debit Aliran */}
-          <Card className='border-slate-200 shadow-sm bg-white'>
-            <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-              <CardTitle className='text-sm font-medium text-slate-500'>
-                Debit Aliran
+          <Card className='border-slate-200 shadow-sm bg-white hover:border-[#0B3C5D]/40 transition-all duration-300 group'>
+            <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-3'>
+              <CardTitle className='text-xs font-bold tracking-wider uppercase text-[#4F5D73]'>
+                DEBIT ALIRAN AKTUAL
               </CardTitle>
-              <Activity className='h-4 w-4 text-blue-600' />
+              <div className='p-2 rounded bg-[#0B3C5D]/5 text-[#0B3C5D] group-hover:bg-[#0B3C5D] group-hover:text-white transition-colors duration-300'>
+                <Activity className='h-4 w-4' />
+              </div>
             </CardHeader>
             <CardContent>
-              <div className='text-3xl font-bold text-slate-950'>
+              <div className='text-3xl font-black text-[#0B3C5D] tracking-tight'>
                 {currentData.flow_rate.toFixed(2)}
-                <span className='text-base font-normal text-slate-500 ml-1'>
+                <span className='text-sm font-bold text-[#4F5D73] ml-1.5 uppercase tracking-wide'>
                   L/min
                 </span>
               </div>
-              <p className='text-xs text-slate-400 mt-1'>
-                Kecepatan aliran air aktual
-              </p>
+              <div className='w-full bg-slate-100 h-1.5 rounded-full mt-4 overflow-hidden'>
+                <div
+                  className='bg-[#0B3C5D] h-full transition-all duration-500'
+                  style={{
+                    width: `${Math.min((currentData.flow_rate / 50) * 100, 100)}%`,
+                  }}
+                />
+              </div>
             </CardContent>
           </Card>
 
           {/* Card 2: Total Volume Akumulasi */}
-          <Card className='border-slate-200 shadow-sm bg-white'>
-            <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-              <CardTitle className='text-sm font-medium text-slate-500'>
-                Total Volume
+          <Card className='border-slate-200 shadow-sm bg-white hover:border-[#0B3C5D]/40 transition-all duration-300 group'>
+            <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-3'>
+              <CardTitle className='text-xs font-bold tracking-wider uppercase text-[#4F5D73]'>
+                AKUMULASI VOLUME
               </CardTitle>
-              <Droplet className='h-4 w-4 text-blue-600' />
+              <div className='p-2 rounded bg-[#0B3C5D]/5 text-[#0B3C5D] group-hover:bg-[#0B3C5D] group-hover:text-white transition-colors duration-300'>
+                <Droplet className='h-4 w-4' />
+              </div>
             </CardHeader>
             <CardContent>
-              <div className='text-3xl font-bold text-slate-950'>
-                {currentData.total_liters.toFixed(2)}
-                <span className='text-base font-normal text-slate-500 ml-1'>
+              <div className='text-3xl font-black text-[#0B3C5D] tracking-tight'>
+                {currentData.total_liters.toFixed(1)}
+                <span className='text-sm font-bold text-[#4F5D73] ml-1.5 uppercase tracking-wide'>
                   Liter
                 </span>
               </div>
-              <p className='text-xs text-slate-400 mt-1'>
-                Akumulasi air terpakai
+              <p className='text-[11px] text-[#4F5D73]/70 font-semibold mt-4 flex items-center space-x-1'>
+                <span>Log Total Volume Penyaluran Air</span>
               </p>
             </CardContent>
           </Card>
 
           {/* Card 3: Sinyal WiFi */}
-          <Card className='border-slate-200 shadow-sm bg-white'>
-            <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
-              <CardTitle className='text-sm font-medium text-slate-500'>
-                Sinyal WiFi
+          <Card className='border-slate-200 shadow-sm bg-white hover:border-[#0B3C5D]/40 transition-all duration-300 group sm:col-span-2 md:col-span-1'>
+            <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-3'>
+              <CardTitle className='text-xs font-bold tracking-wider uppercase text-[#4F5D73]'>
+                KEKUATAN SINYAL RADIO
               </CardTitle>
-              <Wifi className='h-4 w-4 text-blue-600' />
+              <div className='p-2 rounded bg-[#0B3C5D]/5 text-[#0B3C5D] group-hover:bg-[#0B3C5D] group-hover:text-white transition-colors duration-300'>
+                <Wifi className='h-4 w-4' />
+              </div>
             </CardHeader>
             <CardContent>
-              <div className='text-3xl font-bold text-slate-950'>
+              <div className='text-3xl font-black text-[#0B3C5D] tracking-tight'>
                 {currentData.wifi_rssi}
-                <span className='text-base font-normal text-slate-500 ml-1'>
+                <span className='text-sm font-bold text-[#4F5D73] ml-1.5 uppercase tracking-wide'>
                   dBm
                 </span>
               </div>
-              <p className='text-xs text-slate-400 mt-1'>
-                Kekuatan sinyal radio NodeMCU
+              <p className='text-[11px] font-bold mt-4 text-emerald-600 flex items-center space-x-1'>
+                <span>Koneksi Transmisi NodeMCU Stabil</span>
               </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Bagian Grafik Garis Real-Time */}
-        <Card className='border-slate-200 shadow-sm p-4 md:p-6 bg-white'>
-          <div className='mb-4'>
-            <h3 className='text-lg font-semibold text-slate-950'>
-              Grafik Aliran Air Terkini
-            </h3>
-            <p className='text-xs text-slate-400'>
-              Diperbarui otomatis setiap telemetri masuk dari ESP8266
-            </p>
+        {/* Real-Time Line Chart Section */}
+        <Card className='border-slate-200 shadow-sm p-5 md:p-6 bg-white'>
+          <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4 mb-5 gap-2'>
+            <div>
+              <h3 className='text-base font-extrabold text-[#0B3C5D] uppercase tracking-wider'>
+                Grafik Aliran Air Terkini
+              </h3>
+              <p className='text-xs text-[#4F5D73]/80 font-medium mt-0.5'>
+                Pembaruan otomatis langsung terikat via replikasi PostgreSQL
+                Supabase.
+              </p>
+            </div>
+            <div className='flex items-center space-x-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded text-xs font-bold text-[#0B3C5D] self-start sm:self-center'>
+              <div className='h-2 w-2 rounded-full bg-[#0B3C5D] animate-pulse' />
+              <span>LIVE FEED RATE</span>
+            </div>
           </div>
           <div className='w-full min-h-[350px]'>
             <Chart
@@ -234,6 +294,12 @@ export default function Dashboard() {
             />
           </div>
         </Card>
+
+        {/* Footer Company Identity */}
+        <div className='text-center text-[10px] font-bold text-[#4F5D73]/60 tracking-widest uppercase pt-4 border-t border-slate-200'>
+          © {new Date().getFullYear()} Karian Dam-Serpong Water Conveyance
+          System Project Package II. All Rights Reserved.
+        </div>
       </div>
     </div>
   );
