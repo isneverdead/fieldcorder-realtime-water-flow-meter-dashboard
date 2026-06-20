@@ -3,16 +3,15 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Droplet, Activity, Wifi } from 'lucide-react'; // Menggunakan lucide-react untuk ikon KPI
+import { Droplet, Activity, Wifi } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
-// Mematikan SSR (Server-Side Rendering) khusus untuk ApexCharts karena butuh objek 'window' di browser
 const Chart = dynamic(() => import('react-apexcharts'), { ssr: false });
 
 interface TelemetryData {
   device_id: string;
   flow_rate: number;
-  total_liters: number;
+  total_liters: number; // Dipastikan sesuai dengan skema database & API Route
   wifi_rssi: number;
   created_at: string;
 }
@@ -29,7 +28,41 @@ export default function Dashboard() {
   const [chartData, setChartData] = useState<{ x: string; y: number }[]>([]);
 
   useEffect(() => {
-    // Berlangganan ke perubahan database tabel Supabase secara Real-Time via Postgres Changes
+    // 1. AMBIL DATA AWAL (INITIAL LOAD) TERBARU SAAT DASHBOARD DIBUKA
+    const fetchLatestData = async () => {
+      const { data, error } = await supabase
+        .from('water_flow_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(15); // Ambil 15 data terakhir untuk mengisi chart awal
+
+      if (error) {
+        console.error('Gagal mengambil data awal:', error);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        // Set KPI Card ke data paling baru (indeks 0)
+        setCurrentData(data[0]);
+
+        // Balik urutan data untuk kebutuhan timeline grafik (dari lampau ke terbaru)
+        const formattedChartData = data
+          .reverse()
+          .map((item: TelemetryData) => ({
+            x: new Date(item.created_at).toLocaleTimeString('id-ID', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            }),
+            y: item.flow_rate,
+          }));
+        setChartData(formattedChartData);
+      }
+    };
+
+    fetchLatestData();
+
+    // 2. BERLANGGANAN DATA REAL-TIME VIA SUPABASE
     const channel = supabase
       .channel('schema-db-changes')
       .on(
@@ -53,7 +86,7 @@ export default function Dashboard() {
               ...prevData,
               { x: timeString, y: newData.flow_rate },
             ];
-            if (updated.length > 20) updated.shift(); // Maksimal 20 titik data agar chart bergeser smooth
+            if (updated.length > 20) updated.shift(); // Geser grafik jika lebih dari 20 titik
             return updated;
           });
         },
@@ -79,7 +112,11 @@ export default function Dashboard() {
     colors: ['#2563eb'],
     xaxis: {
       type: 'category',
-      labels: { style: { colors: '#64748b' } },
+      labels: {
+        style: { colors: '#64748b' },
+        rotate: -45,
+        rotateAlways: false,
+      },
     },
     yaxis: {
       min: 0,
@@ -112,7 +149,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Bagian KPI Grid (Shadcn/ui Cards) */}
+        {/* Bagian KPI Grid */}
         <div className='grid gap-6 md:grid-cols-3'>
           {/* Card 1: Debit Aliran */}
           <Card className='border-slate-200 shadow-sm bg-white'>
